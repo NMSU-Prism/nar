@@ -86,7 +86,7 @@ echo "=== 7. Setup Narwhal runner ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 cd ~
-git clone -b master https://github.com/NMSU-Prism/narwhal.git
+git clone -b main https://github.com/NMSU-Prism/nar.git
 python3 -m venv ~/virtual_env
 . ~/virtual_env/bin/activate
 pip install --upgrade pip setuptools wheel
