@@ -1,0 +1,60 @@
+{
+    "authorities": {
+        "V6kyAVDOpm4NGIjAbjXPGs/zxIFOlOT35B0z+JEz+Nc=": {
+            "primary": {
+                "primary_to_primary": "127.0.0.1:4010",
+                "worker_to_primary": "127.0.0.1:4011"
+            },
+            "stake": 1,
+            "workers": {
+                "0": {
+                    "primary_to_worker": "127.0.0.1:4012",
+                    "transactions": "127.0.0.1:4013",
+                    "worker_to_worker": "127.0.0.1:4014"
+                }
+            }
+        },
+        "WEqf3KkAACYHnfU/KJoCI+UQk2fSUHGX+K/0DHzMdeQ=": {
+            "primary": {
+                "primary_to_primary": "127.0.0.1:4005",
+                "worker_to_primary": "127.0.0.1:4006"
+            },
+            "stake": 1,
+            "workers": {
+                "0": {
+                    "primary_to_worker": "127.0.0.1:4007",
+                    "transactions": "127.0.0.1:4008",
+                    "worker_to_worker": "127.0.0.1:4009"
+                }
+            }
+        },
+        "mkncJhFngDMyH2GfGfJoYCnWbp0eBOavWPAV3CU8ZWI=": {
+            "primary": {
+                "primary_to_primary": "127.0.0.1:4015",
+                "worker_to_primary": "127.0.0.1:4016"
+            },
+            "stake": 1,
+            "workers": {
+                "0": {
+                    "primary_to_worker": "127.0.0.1:4017",
+                    "transactions": "127.0.0.1:4018",
+                    "worker_to_worker": "127.0.0.1:4019"
+                }
+            }
+        },
+        "nwmKDglSl76CBeXV/qv1DuR23W1u2gGSEbY7z+eXElQ=": {
+            "primary": {
+                "primary_to_primary": "127.0.0.1:4000",
+                "worker_to_primary": "127.0.0.1:4001"
+            },
+            "stake": 1,
+            "workers": {
+                "0": {
+                    "primary_to_worker": "127.0.0.1:4002",
+                    "transactions": "127.0.0.1:4003",
+                    "worker_to_worker": "127.0.0.1:4004"
+                }
+            }
+        }
+    }
+}
