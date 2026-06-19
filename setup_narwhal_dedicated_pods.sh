@@ -3,37 +3,93 @@ set -euo pipefail
 
 NS="kt-local-eth-testnet"
 RUNNER="narwhal-runner"
+NODE_PREFIX="narwhal-node"
+COUNT=10
 
-echo "=== 0. Detect running EL pods ==="
-PODS=($(kubectl get pods -n "$NS" --field-selector=status.phase=Running -o name \
-  | sed 's#pod/##' \
-  | grep '^el-.*geth-lighthouse$' \
-  | sort \
-  | head -10))
+echo "=== 1. Clean old runner/narwhal nodes ==="
+kubectl delete pod -n "$NS" "$RUNNER" --ignore-not-found=true
 
-if [ "${#PODS[@]}" -lt 10 ]; then
-  echo "ERROR: Need 10 running EL pods, found ${#PODS[@]}"
-  printf '%s\n' "${PODS[@]}"
-  exit 1
-fi
-
-IPS=()
-for POD in "${PODS[@]}"; do
-  IP=$(kubectl get pod -n "$NS" "$POD" -o jsonpath='{.status.podIP}')
-  IPS+=("$IP")
+for i in $(seq -w 1 "$COUNT"); do
+  kubectl delete pod -n "$NS" "${NODE_PREFIX}-${i}" --ignore-not-found=true
+  kubectl delete svc -n "$NS" "${NODE_PREFIX}-${i}" --ignore-not-found=true
 done
 
-echo "Using pods:"
-printf '%s\n' "${PODS[@]}"
-echo "Using IPs:"
-printf '%s\n' "${IPS[@]}"
+echo "=== 2. Create runner pod ==="
+kubectl run "$RUNNER" \
+  -n "$NS" \
+  --image=debian:13 \
+  --restart=Never \
+  --command -- sleep infinity
 
-echo "=== 1. Reset runner ==="
-kubectl delete pod -n "$NS" "$RUNNER" --ignore-not-found=true
-kubectl run "$RUNNER" -n "$NS" --image=debian:13 --restart=Never --command -- sleep infinity
 kubectl wait --for=condition=Ready pod/"$RUNNER" -n "$NS" --timeout=180s
 
-echo "=== 2. Install runner tools ==="
+echo "=== 3. Create 10 dedicated Narwhal pods + services ==="
+for i in $(seq -w 1 "$COUNT"); do
+  POD="${NODE_PREFIX}-${i}"
+
+  cat <<YAML | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${POD}
+  namespace: ${NS}
+  labels:
+    app: narwhal-node
+    node-name: ${POD}
+spec:
+  containers:
+  - name: narwhal
+    image: debian:13
+    command: ["sleep", "infinity"]
+    ports:
+    - containerPort: 22
+    - containerPort: 5000
+    - containerPort: 5001
+    - containerPort: 5002
+    - containerPort: 5003
+    - containerPort: 5004
+    - containerPort: 5005
+YAML
+
+  cat <<YAML | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${POD}
+  namespace: ${NS}
+spec:
+  selector:
+    node-name: ${POD}
+  ports:
+  - name: ssh
+    port: 22
+    targetPort: 22
+  - name: p5000
+    port: 5000
+    targetPort: 5000
+  - name: p5001
+    port: 5001
+    targetPort: 5001
+  - name: p5002
+    port: 5002
+    targetPort: 5002
+  - name: p5003
+    port: 5003
+    targetPort: 5003
+  - name: p5004
+    port: 5004
+    targetPort: 5004
+  - name: p5005
+    port: 5005
+    targetPort: 5005
+YAML
+done
+
+for i in $(seq -w 1 "$COUNT"); do
+  kubectl wait --for=condition=Ready pod/"${NODE_PREFIX}-${i}" -n "$NS" --timeout=180s
+done
+
+echo "=== 4. Install runner tools ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 apt update &&
 apt install -y git curl openssh-client openssh-server sudo \
@@ -41,7 +97,7 @@ python3 python3-pip python3-venv build-essential \
 pkg-config libssl-dev clang libclang-dev llvm-dev cmake
 "
 
-echo "=== 3. Create runner user/key ==="
+echo "=== 5. Create runner user/key ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 useradd -m -s /bin/bash narwhal 2>/dev/null || true
 echo 'narwhal ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/narwhal
@@ -52,9 +108,11 @@ su - narwhal -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t rsa -N \"\
 
 PUBKEY=$(kubectl exec -n "$NS" "$RUNNER" -- cat /home/narwhal/.ssh/id_rsa.pub)
 
-echo "=== 4. Prepare selected EL pods: SSH, sudo, build deps, clang ==="
-for POD in "${PODS[@]}"; do
+echo "=== 6. Prepare 10 Narwhal nodes ==="
+for i in $(seq -w 1 "$COUNT"); do
+  POD="${NODE_PREFIX}-${i}"
   echo "----- $POD -----"
+
   kubectl exec -n "$NS" "$POD" -- bash -c "
     apt update &&
     apt install -y openssh-server sudo git curl build-essential \
@@ -72,20 +130,28 @@ for POD in "${PODS[@]}"; do
   "
 done
 
-echo "=== 5. SSH verify from runner to all EL pods ==="
-for IP in "${IPS[@]}"; do
-  kubectl exec -n "$NS" "$RUNNER" -- bash -c \
-    "su - narwhal -c 'ssh -o StrictHostKeyChecking=no -o BatchMode=yes narwhal@$IP \"hostname && whoami\"'"
+echo "=== 7. Build DNS host list ==="
+HOSTS=()
+for i in $(seq -w 1 "$COUNT"); do
+  HOSTS+=("${NODE_PREFIX}-${i}.${NS}.svc.cluster.local")
 done
 
-echo "=== 6. Install/update Rust stable on all EL pods ==="
-for IP in "${IPS[@]}"; do
-  echo "----- Rust on $IP -----"
+printf '%s\n' "${HOSTS[@]}"
+
+echo "=== 8. SSH verify by DNS ==="
+for HOST in "${HOSTS[@]}"; do
   kubectl exec -n "$NS" "$RUNNER" -- bash -c \
-    "su - narwhal -c 'ssh narwhal@$IP \"curl https://sh.rustup.rs -sSf | sh -s -- -y && \\\$HOME/.cargo/bin/rustup default stable && rm -rf ~/narwhal && \\\$HOME/.cargo/bin/cargo --version && \\\$HOME/.cargo/bin/rustc --version\"'"
+    "su - narwhal -c 'ssh -o StrictHostKeyChecking=no -o BatchMode=yes narwhal@$HOST \"hostname && whoami\"'"
 done
 
-echo "=== 7. Setup Narwhal runner repo, venv, and Rust/Cargo ==="
+echo "=== 9. Install/update Rust stable on all 10 Narwhal nodes ==="
+for HOST in "${HOSTS[@]}"; do
+  echo "----- Rust on $HOST -----"
+  kubectl exec -n "$NS" "$RUNNER" -- bash -c \
+    "su - narwhal -c 'ssh narwhal@$HOST \"curl https://sh.rustup.rs -sSf | sh -s -- -y && \\\$HOME/.cargo/bin/rustup default stable && rm -rf ~/narwhal && \\\$HOME/.cargo/bin/cargo --version && \\\$HOME/.cargo/bin/rustc --version\"'"
+done
+
+echo "=== 10. Setup runner repo, venv, Rust/Cargo ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 cd ~
@@ -104,11 +170,11 @@ echo \"source \$HOME/.cargo/env\" >> ~/.bashrc
 '
 "
 
-echo "=== 8. Write settings.json for nar.git main and 10 pods ==="
+echo "=== 11. Write settings.json using DNS hostnames ==="
 SETTINGS_JSON="{\"key\":{\"name\":\"local\",\"path\":\"/home/narwhal/.ssh/id_rsa\"},\"ssh_user\":\"narwhal\",\"port\":5000,\"repo\":{\"name\":\"narwhal\",\"url\":\"https://github.com/NMSU-Prism/nar.git\",\"branch\":\"main\"},\"hosts\":["
-for idx in "${!IPS[@]}"; do
+for idx in "${!HOSTS[@]}"; do
   n=$((idx+1))
-  SETTINGS_JSON+="{\"name\":\"n$n\",\"ip\":\"${IPS[$idx]}\"}"
+  SETTINGS_JSON+="{\"name\":\"n$n\",\"ip\":\"${HOSTS[$idx]}\"}"
   if [ "$idx" -lt 9 ]; then SETTINGS_JSON+=","; fi
 done
 SETTINGS_JSON+="]}"
@@ -119,7 +185,7 @@ JSON
 chown -R narwhal:narwhal /home/narwhal/narwhal
 "
 
-echo "=== 9. Patch fabfile.py to use 10 nodes, 1 run, lower rate ==="
+echo "=== 12. Patch fabfile.py to use 10 nodes, 1 run, lower rate ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 cd ~/narwhal/benchmark
@@ -135,7 +201,7 @@ PY
 '
 "
 
-echo "=== 10. Build runner local Narwhal binaries ==="
+echo "=== 13. Build runner local Narwhal binaries ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 . ~/.cargo/env
@@ -144,7 +210,7 @@ cargo build --release --features benchmark
 '
 "
 
-echo "=== 11. Verify all settings, Rust, clang, and fab ==="
+echo "=== 14. Verify settings, fab, cargo ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 . ~/virtual_env/bin/activate
@@ -179,11 +245,11 @@ fab --list
 '
 "
 
-echo "=== 12. Verify remote Rust/clang from runner ==="
-for IP in "${IPS[@]}"; do
-  echo "----- verify $IP -----"
+echo "=== 15. Verify remote Rust/clang by DNS ==="
+for HOST in "${HOSTS[@]}"; do
+  echo "----- verify $HOST -----"
   kubectl exec -n "$NS" "$RUNNER" -- bash -c \
-    "su - narwhal -c 'ssh narwhal@$IP \"\\\$HOME/.cargo/bin/cargo --version && clang --version | head -1 && ls /usr/lib/*/libclang*.so* /usr/lib/llvm-*/lib/libclang*.so* 2>/dev/null | head -1\"'"
+    "su - narwhal -c 'ssh narwhal@$HOST \"\\\$HOME/.cargo/bin/cargo --version && clang --version | head -1 && ls /usr/lib/*/libclang*.so* /usr/lib/llvm-*/lib/libclang*.so* 2>/dev/null | head -1\"'"
 done
 
 echo "=== DONE ==="
