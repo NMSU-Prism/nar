@@ -37,7 +37,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
 
 USER root
 EXPOSE 22 5000 5001 5002 5003 5004 5005
-CMD ["/usr/sbin/sshd", "-D"]
+CMD ["bash", "-lc", "mkdir -p /var/run/sshd && /usr/sbin/sshd && tail -f /dev/null"]
 DOCKER
 
 docker build -t "$IMAGE" /tmp/narwhal-image
@@ -62,12 +62,28 @@ for i in $(seq -w 1 "$COUNT"); do
 done
 
 echo "=== 5. Create runner ==="
-kubectl run "$RUNNER" \
-  -n "$NS" \
-  --image="$IMAGE" \
-  --image-pull-policy=Never \
-  --restart=Never \
-  --command -- sleep infinity
+cat <<YAML | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${RUNNER}
+  namespace: ${NS}
+spec:
+  nodeSelector:
+    eth-node: node-b
+  containers:
+  - name: ${RUNNER}
+    image: ${IMAGE}
+    imagePullPolicy: Never
+    command: ["sleep","infinity"]
+    resources:
+      requests:
+        cpu: "4"
+        memory: "8Gi"
+      limits:
+        cpu: "8"
+        memory: "16Gi"
+YAML
 
 kubectl wait --for=condition=Ready pod/"$RUNNER" -n "$NS" --timeout=180s
 
@@ -85,10 +101,19 @@ metadata:
     app: narwhal-node
     node-name: ${POD}
 spec:
+  nodeSelector:
+    eth-node: node-b
   containers:
   - name: narwhal
     image: ${IMAGE}
     imagePullPolicy: Never
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
     ports:
     - containerPort: 22
     - containerPort: 5000
