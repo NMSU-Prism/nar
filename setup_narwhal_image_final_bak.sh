@@ -10,14 +10,14 @@ TAR="/tmp/narwhal-node-local.tar"
 
 WORKERS=("10.10.0.30" "10.10.0.21")
 
-echo "=== 1. Build custom image locally with prebuilt nar.git ==="
+echo "=== 1. Build custom image locally ==="
 mkdir -p /tmp/narwhal-image
 
 cat > /tmp/narwhal-image/Dockerfile <<'DOCKER'
 FROM debian:13
 
 RUN apt update && apt install -y \
-    openssh-server openssh-client sudo git curl tmux \
+    openssh-server openssh-client sudo git curl \
     python3 python3-pip python3-venv \
     build-essential clang libclang-dev llvm-dev cmake pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
@@ -35,13 +35,6 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
  && /home/narwhal/.cargo/bin/rustup default stable \
  && echo 'source $HOME/.cargo/env' >> /home/narwhal/.bashrc
 
-ENV PATH="/home/narwhal/.cargo/bin:${PATH}"
-ENV CARGO_BUILD_JOBS=1
-
-RUN git clone -b main https://github.com/NMSU-Prism/nar.git /home/narwhal/narwhal \
- && cd /home/narwhal/narwhal \
- && cargo build --release --features benchmark
-
 USER root
 EXPOSE 22 5000 5001 5002 5003 5004 5005
 CMD ["bash", "-lc", "mkdir -p /var/run/sshd && /usr/sbin/sshd && tail -f /dev/null"]
@@ -51,7 +44,7 @@ docker build -t "$IMAGE" /tmp/narwhal-image
 docker save "$IMAGE" -o "$TAR"
 
 echo "=== 2. Import image into local k3s node ==="
-sudo /usr/local/bin/k3s ctr images import "$TAR"
+sudo k3s ctr images import "$TAR"
 
 echo "=== 3. Import image into worker nodes ==="
 for W in "${WORKERS[@]}"; do
@@ -85,14 +78,14 @@ spec:
     command: ["sleep","infinity"]
     resources:
       requests:
-        cpu: "1"
+        cpu: "4"
         memory: "8Gi"
       limits:
         cpu: "8"
         memory: "16Gi"
 YAML
 
-kubectl wait --for=condition=Ready pod/"$RUNNER" -n "$NS" --timeout=300s
+kubectl wait --for=condition=Ready pod/"$RUNNER" -n "$NS" --timeout=180s
 
 echo "=== 6. Create 10 dedicated Narwhal pods + DNS services ==="
 for i in $(seq -w 1 "$COUNT"); do
@@ -116,7 +109,7 @@ spec:
     imagePullPolicy: Never
     resources:
       requests:
-        cpu: "1"
+        cpu: "500m"
         memory: "2Gi"
       limits:
         cpu: "2"
@@ -162,146 +155,11 @@ spec:
   - name: p5005
     port: 5005
     targetPort: 5005
-  - name: p5006
-    port: 5006
-    targetPort: 5006
-  - name: p5007
-    port: 5007
-    targetPort: 5007
-  - name: p5008
-    port: 5008
-    targetPort: 5008
-  - name: p5009
-    port: 5009
-    targetPort: 5009
-  - name: p5010
-    port: 5010
-    targetPort: 5010
-  - name: p5011
-    port: 5011
-    targetPort: 5011
-  - name: p5012
-    port: 5012
-    targetPort: 5012
-  - name: p5013
-    port: 5013
-    targetPort: 5013
-  - name: p5014
-    port: 5014
-    targetPort: 5014
-  - name: p5015
-    port: 5015
-    targetPort: 5015
-  - name: p5016
-    port: 5016
-    targetPort: 5016
-  - name: p5017
-    port: 5017
-    targetPort: 5017
-  - name: p5018
-    port: 5018
-    targetPort: 5018
-  - name: p5019
-    port: 5019
-    targetPort: 5019
-  - name: p5020
-    port: 5020
-    targetPort: 5020
-  - name: p5021
-    port: 5021
-    targetPort: 5021
-  - name: p5022
-    port: 5022
-    targetPort: 5022
-  - name: p5023
-    port: 5023
-    targetPort: 5023
-  - name: p5024
-    port: 5024
-    targetPort: 5024
-  - name: p5025
-    port: 5025
-    targetPort: 5025
-  - name: p5026
-    port: 5026
-    targetPort: 5026
-  - name: p5027
-    port: 5027
-    targetPort: 5027
-  - name: p5028
-    port: 5028
-    targetPort: 5028
-  - name: p5029
-    port: 5029
-    targetPort: 5029
-  - name: p5030
-    port: 5030
-    targetPort: 5030
-  - name: p5031
-    port: 5031
-    targetPort: 5031
-  - name: p5032
-    port: 5032
-    targetPort: 5032
-  - name: p5033
-    port: 5033
-    targetPort: 5033
-  - name: p5034
-    port: 5034
-    targetPort: 5034
-  - name: p5035
-    port: 5035
-    targetPort: 5035
-  - name: p5036
-    port: 5036
-    targetPort: 5036
-  - name: p5037
-    port: 5037
-    targetPort: 5037
-  - name: p5038
-    port: 5038
-    targetPort: 5038
-  - name: p5039
-    port: 5039
-    targetPort: 5039
-  - name: p5040
-    port: 5040
-    targetPort: 5040
-  - name: p5041
-    port: 5041
-    targetPort: 5041
-  - name: p5042
-    port: 5042
-    targetPort: 5042
-  - name: p5043
-    port: 5043
-    targetPort: 5043
-  - name: p5044
-    port: 5044
-    targetPort: 5044
-  - name: p5045
-    port: 5045
-    targetPort: 5045
-  - name: p5046
-    port: 5046
-    targetPort: 5046
-  - name: p5047
-    port: 5047
-    targetPort: 5047
-  - name: p5048
-    port: 5048
-    targetPort: 5048
-  - name: p5049
-    port: 5049
-    targetPort: 5049
-  - name: p5050
-    port: 5050
-    targetPort: 5050
 YAML
 done
 
 for i in $(seq -w 1 "$COUNT"); do
-  kubectl wait --for=condition=Ready pod/"${NODE_PREFIX}-${i}" -n "$NS" --timeout=300s
+  kubectl wait --for=condition=Ready pod/"${NODE_PREFIX}-${i}" -n "$NS" --timeout=180s
 done
 
 echo "=== 7. Create SSH key in runner ==="
@@ -323,12 +181,10 @@ for i in $(seq -w 1 "$COUNT"); do
   "
 done
 
-echo "=== 9. Build service ClusterIP host list ==="
+echo "=== 9. Build DNS host list ==="
 HOSTS=()
 for i in $(seq -w 1 "$COUNT"); do
-  SVC="${NODE_PREFIX}-${i}"
-  IP=$(kubectl get svc -n "$NS" "$SVC" -o jsonpath='{.spec.clusterIP}')
-  HOSTS+=("$IP")
+  HOSTS+=("${NODE_PREFIX}-${i}.${NS}.svc.cluster.local")
 done
 
 printf '%s\n' "${HOSTS[@]}"
@@ -336,14 +192,14 @@ printf '%s\n' "${HOSTS[@]}"
 echo "=== 10. SSH verify by DNS ==="
 for HOST in "${HOSTS[@]}"; do
   kubectl exec -n "$NS" "$RUNNER" -- bash -c \
-    "su - narwhal -c 'ssh -o StrictHostKeyChecking=no -o BatchMode=yes narwhal@$HOST \"/bin/cat /etc/hostname && whoami && /home/narwhal/.cargo/bin/cargo --version && test -x /home/narwhal/narwhal/target/release/node && echo PREBUILT_OK\"'"
+    "su - narwhal -c 'ssh -o StrictHostKeyChecking=no -o BatchMode=yes narwhal@$HOST \"/bin/cat /etc/hostname && whoami && /home/narwhal/.cargo/bin/cargo --version\"'"
 done
 
-echo "=== 11. Setup venv in runner; repo already exists in image ==="
+echo "=== 11. Clone repo and setup venv in runner ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
 cd ~
-test -d ~/narwhal || git clone -b main https://github.com/NMSU-Prism/nar.git narwhal
+git clone -b main https://github.com/NMSU-Prism/nar.git narwhal
 python3 -m venv ~/virtual_env
 . ~/virtual_env/bin/activate
 pip install --upgrade pip setuptools wheel
@@ -382,23 +238,6 @@ PY
 '
 "
 
-echo "=== 13.5 Patch remote.py to skip build if binary exists ==="
-kubectl exec -n "$NS" "$RUNNER" -- bash -c "
-su - narwhal -c '
-cd ~/narwhal/benchmark
-python3 - <<PY
-from pathlib import Path
-p = Path(\"benchmark/remote.py\")
-s = p.read_text()
-s = s.replace(
-    \"cargo build --release --features benchmark\",
-    \"test -x target/release/node || CARGO_BUILD_JOBS=1 cargo build --release --features benchmark\"
-)
-p.write_text(s)
-PY
-'
-"
-
 echo "=== 14. Verify setup ==="
 kubectl exec -n "$NS" "$RUNNER" -- bash -c "
 su - narwhal -c '
@@ -420,14 +259,8 @@ assert cfg[\"repo\"][\"url\"] == \"https://github.com/NMSU-Prism/nar.git\"
 assert cfg[\"repo\"][\"branch\"] == \"main\"
 PY
 
-echo --- remote build command ---
-grep -n \"target/release/node\\|cargo build\" benchmark/remote.py
-
 echo --- fab remote patch ---
 grep -A18 \"def remote\" fabfile.py
-
-echo --- runner prebuilt binary ---
-test -x ~/narwhal/target/release/node && echo PREBUILT_OK
 
 echo --- runner rust ---
 cargo --version
