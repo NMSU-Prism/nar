@@ -35,6 +35,9 @@ crypto = { path = "../crypto" }
 primary = { path = "../primary" }
 worker = { path = "../worker" }
 consensus = { path = "../consensus" }
+chrono = "0.4.45"
+rust_xlsxwriter = "0.99.0"
+tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 
 [features]
 benchmark = ["worker/benchmark", "primary/benchmark", "consensus/benchmark"]
