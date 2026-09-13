@@ -17,6 +17,7 @@ use std::fs::{OpenOptions};
 use async_trait::async_trait;
 use std::time::Duration;
 use tokio::time::timeout;
+use crypto::Hash as _;
 use worker::worker::WorkerMessage;
 use sha3::Digest;
 
@@ -556,6 +557,12 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
         .append(true)        // Open in append mode (do not overwrite)
         .open("result.txt")?; // Open the fil
 
+    // Block-only output
+    let mut blocks_out = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("blocks.txt")?;
+
 
 
     // Build initial DB with all unique senders pre-funded
@@ -587,8 +594,21 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
 
     let mut evm: MainnetEvm<_> = ctx.build_mainnet();
 
-    while let Some(certificate) = rx_output.recv().await {
+    // Log each executed block
+    let mut block_number: u64 = 0;
+    let mut parent_hash = [0u8; 32];
 
+    while let Some(certificate) = rx_output.recv().await {
+        block_number += 1;
+        evm.ctx.block.number = U256::from(block_number);
+
+        let mut block_gas_used: u64 = 0;
+        let mut block_failed_txs: usize = 0;
+        let mut block_txs: Vec<String> = Vec::new();
+        let mut block_hasher = Keccak256::new();
+        block_hasher.update(parent_hash);
+        block_hasher.update(block_number.to_be_bytes());
+        block_hasher.update(certificate.digest().0);
 
 
         let raw_blocks = extract_raw_txs_from_certificate_via_workers(&certificate, &committee, &mut out).await?;
@@ -628,6 +648,12 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
             writeln!(out, "Gas limit       : {}", tx.gas_limit)?;
             writeln!(out, "Value (wei)     : {}", tx.value)?;
             writeln!(out, "Raw RLP (hex)   : 0x{}", hex::encode(&tx.raw))?;
+            let tx_hash = Keccak256::digest(&tx.raw);
+            block_hasher.update(&tx_hash);
+            let tx_to = match tx.kind {
+                TxKind::Call(addr) => format!("{:?}", addr),
+                TxKind::Create => "contract creation".to_string(),
+            };
 
             // Assign a sequential nonce per sender for this replay
             let entry = local_nonces.entry(tx.sender).or_insert(0);
@@ -651,6 +677,20 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
                 Ok(result) => {
                     writeln!(out, "Success : {}", result.is_success())?;
                     writeln!(out, "Gas Used: {}", result.gas_used())?;
+                    block_gas_used += result.gas_used();
+                    if !result.is_success() {
+                        block_failed_txs += 1;
+                    }
+                    block_txs.push(format!(
+                        "    [{}] 0x{} from={:?} to={} value={} gasUsed={} status={}",
+                        i,
+                        hex::encode(&tx_hash),
+                        tx.sender,
+                        tx_to,
+                        tx.value,
+                        result.gas_used(),
+                        if result.is_success() { "success" } else { "reverted" },
+                    ));
 
                     let output_hex = result
                         .output()
@@ -660,13 +700,60 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
                 }
                 Err(e) => {
                     writeln!(out, "Error executing tx #{i}: {e}")?;
+                    block_failed_txs += 1;
+                    block_txs.push(format!(
+                        "    [{}] 0x{} from={:?} to={} value={} gasUsed=0 status=error ({})",
+                        i,
+                        hex::encode(&tx_hash),
+                        tx.sender,
+                        tx_to,
+                        tx.value,
+                        e,
+                    ));
                 }
             }
 
             writeln!(out, "--- State Changes: (not dumped in this version) ---")?;
         }
 
-        println!("All results written to result.txt");
+        // Ethereum-style block update
+        let block_time = chrono::Local::now();
+        let block_timestamp = block_time.timestamp() as u64;
+        evm.ctx.block.timestamp = U256::from(block_timestamp);
+        block_hasher.update(block_timestamp.to_be_bytes());
+        let block_hash: [u8; 32] = block_hasher.finalize().into();
+        let block_line = format!(
+            "INFO [{}] Imported new block  number={} hash=0x{} parent=0x{} txs={} failed={} gas={} round={} timestamp={}",
+            block_time.format("%m-%d|%H:%M:%S%.3f"),
+            block_number,
+            hex::encode(block_hash),
+            hex::encode(parent_hash),
+            decoded_txs.len(),
+            block_failed_txs,
+            block_gas_used,
+            certificate.round(),
+            block_timestamp,
+        );
+        writeln!(out, "{}", block_line)?;
+        // Block-only output, laid out like an Ethereum block query.
+        writeln!(blocks_out, "==================== Block #{} ====================", block_number)?;
+        writeln!(blocks_out, "  hash         : 0x{}", hex::encode(block_hash))?;
+        writeln!(blocks_out, "  parentHash   : 0x{}", hex::encode(parent_hash))?;
+        writeln!(
+            blocks_out,
+            "  timestamp    : {} ({})",
+            block_timestamp,
+            block_time.format("%Y-%m-%d %H:%M:%S%.3f")
+        )?;
+        writeln!(blocks_out, "  round        : {}", certificate.round())?;
+        writeln!(blocks_out, "  gasUsed      : {}", block_gas_used)?;
+        writeln!(blocks_out, "  failed       : {}", block_failed_txs)?;
+        writeln!(blocks_out, "  transactions : {}", block_txs.len())?;
+        for line in &block_txs {
+            writeln!(blocks_out, "{}", line)?;
+        }
+        println!("{}", block_line);
+        parent_hash = block_hash;
 
     }
 
