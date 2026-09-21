@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
         .context("Invalid node address")?;
 
     info!("Narwhal target: {}", target);
-    info!("Compatibility size option: {} B", size);
+    info!("Compatibility size: {} B", size);
     info!("Target rate: {} tx/s", rate);
 
     let client = Client {
