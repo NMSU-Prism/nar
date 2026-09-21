@@ -211,7 +211,7 @@ impl Client {
         });
 
         let geth_rpc_url = std::env::var("GETH_RPC_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8545".to_string());
+            .unwrap_or_else(|_| "http://el-01-geth-lighthouse:8545".to_string());
 
         let output_xlsx = std::env::var("METRICS_XLSX")
             .unwrap_or_else(|_| "narwhal_geth_metrics.xlsx".to_string());
