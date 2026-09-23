@@ -203,7 +203,7 @@ fn ethereum_tx_hash(raw_tx: &[u8]) -> String {
     hasher.finalize(&mut output);
     format!("0x{}", hex::encode(output))
 }
-e
+
 impl Client {
     async fn send(&self) -> Result<()> {
         let transaction_file = std::env::var("TRANSACTION_FILE").unwrap_or_else(|_| {
@@ -213,10 +213,16 @@ impl Client {
         let geth_rpc_url = std::env::var("GETH_RPC_URL")
             .unwrap_or_else(|_| "http://el-01-geth-lighthouse:8545".to_string());
 
+        // let output_xlsx = std::env::var("METRICS_XLSX")
+        //     .unwrap_or_else(|_| "narwhal_geth_metrics.xlsx".to_string());
         let output_xlsx = std::env::var("METRICS_XLSX")
-            .unwrap_or_else(|_| "narwhal_geth_metrics.xlsx".to_string());
+            .unwrap_or_else(|_| {
+                "/home/narwhal/narwhal/benchmark/narwhal_geth_metrics.xlsx".to_string()
+            });
 
-        let receipt_timeout_sec = env_u64("RECEIPT_TIMEOUT_SEC", 600);
+        info!("Excel output path: {}", output_xlsx);
+
+        let receipt_timeout_sec = env_u64("RECEIPT_TIMEOUT_SEC", 15);
         let receipt_poll_ms = env_u64("RECEIPT_POLL_MS", 1000);
 
         let mut file = File::open(&transaction_file)
@@ -311,38 +317,34 @@ impl Client {
             actual_rate
         );
 
-        // collect_receipts(
-        //     &mut metrics,
-        //     &geth_rpc_url,
-        //     Duration::from_secs(receipt_timeout_sec),
-        //     Duration::from_millis(receipt_poll_ms),
-        // )
-        // .await;
-
-        // let summary = calculate_summary(&metrics, send_duration_sec);
-
-        // write_excel(&output_xlsx, &metrics, &summary).map_err(|error| {
-        //     anyhow::anyhow!("Failed to save Excel {}: {}", output_xlsx, error)
-        // })?;
-
-        // info!("Excel metrics saved to {}", output_xlsx);
         // ============================================================
         // SAVE INITIAL EXCEL IMMEDIATELY AFTER NARWHAL SEND
         // ============================================================
 
         let initial_summary = calculate_summary(&metrics, send_duration_sec);
 
+        info!(
+            "ABOUT TO WRITE INITIAL EXCEL path={}",
+            output_xlsx
+        );
+
         write_excel(
             &output_xlsx,
             &metrics,
             &initial_summary,
-        )?;
+        )
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "Failed to save initial Excel {}: {}",
+                output_xlsx,
+                error
+            )
+        })?;
 
         info!(
             "INITIAL Excel metrics saved to {}",
             output_xlsx
         );
-
 
         // ============================================================
         // WAIT FOR GETH RECEIPTS
@@ -364,7 +366,6 @@ impl Client {
         )
         .await;
 
-
         // ============================================================
         // OVERWRITE WITH FINAL RECEIPT DATA
         // ============================================================
@@ -378,13 +379,96 @@ impl Client {
             &output_xlsx,
             &metrics,
             &final_summary,
-        )?;
+        )
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "Failed to save final Excel {}: {}",
+                output_xlsx,
+                error
+            )
+        })?;
 
         info!(
             "FINAL Excel metrics saved to {}",
             output_xlsx
         );
+
         Ok(())
+
+        // collect_receipts(
+        //     &mut metrics,
+        //     &geth_rpc_url,
+        //     Duration::from_secs(receipt_timeout_sec),
+        //     Duration::from_millis(receipt_poll_ms),
+        // )
+        // .await;
+
+        // let summary = calculate_summary(&metrics, send_duration_sec);
+
+        // write_excel(&output_xlsx, &metrics, &summary).map_err(|error| {
+        //     anyhow::anyhow!("Failed to save Excel {}: {}", output_xlsx, error)
+        // })?;
+
+        // info!("Excel metrics saved to {}", output_xlsx);
+        // ============================================================
+        // SAVE INITIAL EXCEL IMMEDIATELY AFTER NARWHAL SEND
+        // ============================================================
+
+        // let initial_summary = calculate_summary(&metrics, send_duration_sec);
+
+        // write_excel(
+        //     &output_xlsx,
+        //     &metrics,
+        //     &initial_summary,
+        // )?;
+
+        // info!(
+        //     "INITIAL Excel metrics saved to {}",
+        //     output_xlsx
+        // );
+
+
+        // // ============================================================
+        // // WAIT FOR GETH RECEIPTS
+        // // ============================================================
+
+        // info!(
+        //     "Starting Geth receipt collection: txs={} rpc={} timeout={}s poll={}ms",
+        //     metrics.len(),
+        //     geth_rpc_url,
+        //     receipt_timeout_sec,
+        //     receipt_poll_ms
+        // );
+
+        // collect_receipts(
+        //     &mut metrics,
+        //     &geth_rpc_url,
+        //     Duration::from_secs(receipt_timeout_sec),
+        //     Duration::from_millis(receipt_poll_ms),
+        // )
+        // .await;
+
+
+        // // ============================================================
+        // // OVERWRITE WITH FINAL RECEIPT DATA
+        // // ============================================================
+
+        // let final_summary = calculate_summary(
+        //     &metrics,
+        //     send_duration_sec,
+        // );
+
+        // write_excel(
+        //     &output_xlsx,
+        //     &metrics,
+        //     &final_summary,
+        // )?;
+
+        // info!(
+        //     "FINAL Excel metrics saved to {}",
+        //     output_xlsx
+        // );
+        // Ok(())
     }
 
     async fn wait(&self) {
