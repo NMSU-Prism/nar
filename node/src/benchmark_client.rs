@@ -222,7 +222,7 @@ impl Client {
 
         info!("Excel output path: {}", output_xlsx);
 
-        let receipt_timeout_sec = env_u64("RECEIPT_TIMEOUT_SEC", 15);
+        let receipt_timeout_sec = env_u64("RECEIPT_TIMEOUT_SEC", 600);
         let receipt_poll_ms = env_u64("RECEIPT_POLL_MS", 1000);
 
         let mut file = File::open(&transaction_file)
