@@ -46,7 +46,8 @@ class CommandMaker:
         assert isinstance(parameters, str)
         assert isinstance(debug, bool)
         v = '-vvv' if debug else '-vv'
-        return (f'${{BIN_PREFIX:-.}}/node {v} run --keys {keys} '
+        return (f'NARWHAL_SIDECAR_URL=http://el-01-geth-lighthouse:9050 '
+                f'${{BIN_PREFIX:-.}}/node {v} run --keys {keys} '
                 f'--committee {committee} --store {store} '
                 f'--parameters {parameters} worker --id {id}')
 
