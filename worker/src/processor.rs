@@ -49,11 +49,82 @@ async fn notify_sidecar_digest(digest32: [u8; 32], worker_id: WorkerId) {
     };
 
     // Best-effort notify; do not block consensus pipeline on failures.
-    let _ = reqwest::Client::new()
-        .post(format!("{}/digest", base.trim_end_matches('/')))
-        .json(&msg)
-        .send()
-        .await;
+    // let _ = reqwest::Client::new()
+    //     .post(format!("{}/digest", base.trim_end_matches('/')))
+    //     .json(&msg)
+    //     .send()
+    //     .await;
+    async fn notify_sidecar_digest(
+        digest32: [u8; 32],
+        worker_id: WorkerId,
+    ) {
+        let base = match std::env::var("NARWHAL_SIDECAR_URL") {
+            Ok(v) if !v.trim().is_empty() => v,
+
+            Ok(_) => {
+                eprintln!(
+                    "[processor] SIDECAR URL EMPTY worker={}",
+                    worker_id
+                );
+                return;
+            }
+
+            Err(e) => {
+                eprintln!(
+                    "[processor] SIDECAR ENV ERROR worker={} error={:?}",
+                    worker_id,
+                    e
+                );
+                return;
+            }
+        };
+
+        let digest_hex =
+            format!("0x{}", digest32.encode_hex::<String>());
+
+        let msg = SidecarDigestNotify {
+            digest: digest_hex.clone(),
+            worker_id: worker_id as u32,
+        };
+
+        let url = format!(
+            "{}/digest",
+            base.trim_end_matches('/')
+        );
+
+        eprintln!(
+            "[processor] SIDECAR POST START digest={} worker={} url={}",
+            digest_hex,
+            worker_id,
+            url
+        );
+
+        match reqwest::Client::new()
+            .post(&url)
+            .json(&msg)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                eprintln!(
+                    "[processor] SIDECAR POST RESULT digest={} worker={} status={}",
+                    digest_hex,
+                    worker_id,
+                    resp.status()
+                );
+            }
+
+            Err(e) => {
+                eprintln!(
+                    "[processor] SIDECAR POST FAILED digest={} worker={} url={} error={:?}",
+                    digest_hex,
+                    worker_id,
+                    url,
+                    e
+                );
+            }
+        }
+    }
 }
 
 impl Processor {
