@@ -203,7 +203,7 @@ fn ethereum_tx_hash(raw_tx: &[u8]) -> String {
     hasher.finalize(&mut output);
     format!("0x{}", hex::encode(output))
 }
-
+e
 impl Client {
     async fn send(&self) -> Result<()> {
         let transaction_file = std::env::var("TRANSACTION_FILE").unwrap_or_else(|_| {
@@ -311,6 +311,51 @@ impl Client {
             actual_rate
         );
 
+        // collect_receipts(
+        //     &mut metrics,
+        //     &geth_rpc_url,
+        //     Duration::from_secs(receipt_timeout_sec),
+        //     Duration::from_millis(receipt_poll_ms),
+        // )
+        // .await;
+
+        // let summary = calculate_summary(&metrics, send_duration_sec);
+
+        // write_excel(&output_xlsx, &metrics, &summary).map_err(|error| {
+        //     anyhow::anyhow!("Failed to save Excel {}: {}", output_xlsx, error)
+        // })?;
+
+        // info!("Excel metrics saved to {}", output_xlsx);
+        // ============================================================
+        // SAVE INITIAL EXCEL IMMEDIATELY AFTER NARWHAL SEND
+        // ============================================================
+
+        let initial_summary = calculate_summary(&metrics, send_duration_sec);
+
+        write_excel(
+            &output_xlsx,
+            &metrics,
+            &initial_summary,
+        )?;
+
+        info!(
+            "INITIAL Excel metrics saved to {}",
+            output_xlsx
+        );
+
+
+        // ============================================================
+        // WAIT FOR GETH RECEIPTS
+        // ============================================================
+
+        info!(
+            "Starting Geth receipt collection: txs={} rpc={} timeout={}s poll={}ms",
+            metrics.len(),
+            geth_rpc_url,
+            receipt_timeout_sec,
+            receipt_poll_ms
+        );
+
         collect_receipts(
             &mut metrics,
             &geth_rpc_url,
@@ -319,13 +364,26 @@ impl Client {
         )
         .await;
 
-        let summary = calculate_summary(&metrics, send_duration_sec);
 
-        write_excel(&output_xlsx, &metrics, &summary).map_err(|error| {
-            anyhow::anyhow!("Failed to save Excel {}: {}", output_xlsx, error)
-        })?;
+        // ============================================================
+        // OVERWRITE WITH FINAL RECEIPT DATA
+        // ============================================================
 
-        info!("Excel metrics saved to {}", output_xlsx);
+        let final_summary = calculate_summary(
+            &metrics,
+            send_duration_sec,
+        );
+
+        write_excel(
+            &output_xlsx,
+            &metrics,
+            &final_summary,
+        )?;
+
+        info!(
+            "FINAL Excel metrics saved to {}",
+            output_xlsx
+        );
         Ok(())
     }
 
