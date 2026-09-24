@@ -13,8 +13,10 @@ use rust_xlsxwriter::{Format, FormatAlign, Workbook, XlsxError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
+// use std::fs::File;
+// use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 use tiny_keccak::{Hasher, Keccak};
@@ -222,6 +224,13 @@ impl Client {
 
         info!("Excel output path: {}", output_xlsx);
 
+        let send_times_file = std::env::var("SEND_TIMES_FILE")
+            .unwrap_or_else(|_| {
+                "/home/narwhal/narwhal/benchmark/send_times.txt".to_string()
+            });
+
+        info!("Send-time output path: {}", send_times_file);
+
         let receipt_timeout_sec = env_u64("RECEIPT_TIMEOUT_SEC", 600);
         let receipt_poll_ms = env_u64("RECEIPT_POLL_MS", 1000);
 
@@ -255,6 +264,24 @@ impl Client {
         let send_start = Instant::now();
         let mut metrics = Vec::with_capacity(transactions.len());
 
+        let mut send_times_out = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&send_times_file)
+            .with_context(|| {
+                format!(
+                    "Failed to open send-time file {}",
+                    send_times_file
+                )
+            })?;
+
+        // Header
+        writeln!(
+            send_times_out,
+            "tx_index,tx_hash,send_time_utc,send_epoch_ms"
+        )?;
+
         for (tx_index, raw_tx) in transactions.iter().enumerate() {
             ticker.as_mut().tick().await;
 
@@ -270,6 +297,17 @@ impl Client {
                         tx_index, tx_hash
                     )
                 })?;
+
+            writeln!(
+                send_times_out,
+                "{},{},{},{}",
+                tx_index,
+                tx_hash,
+                send_time.to_rfc3339(),
+                send_time.timestamp_millis()
+            )?;
+
+            send_times_out.flush()?;    
 
             metrics.push(TxMetric {
                 tx_index,

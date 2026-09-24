@@ -719,6 +719,7 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
         // Ethereum-style block update
         let block_time = chrono::Local::now();
         let block_timestamp = block_time.timestamp() as u64;
+        let block_timestamp_ms = block_time.timestamp_millis();
         evm.ctx.block.timestamp = U256::from(block_timestamp);
         block_hasher.update(block_timestamp.to_be_bytes());
         let block_hash: [u8; 32] = block_hasher.finalize().into();
@@ -739,11 +740,23 @@ async fn analyze(mut rx_output: Receiver<Certificate>,
         writeln!(blocks_out, "==================== Block #{} ====================", block_number)?;
         writeln!(blocks_out, "  hash         : 0x{}", hex::encode(block_hash))?;
         writeln!(blocks_out, "  parentHash   : 0x{}", hex::encode(parent_hash))?;
+        // writeln!(
+        //     blocks_out,
+        //     "  timestamp    : {} ({})",
+        //     block_timestamp,
+        //     block_time.format("%Y-%m-%d %H:%M:%S%.3f")
+        // )?;
         writeln!(
             blocks_out,
-            "  timestamp    : {} ({})",
+            "  timestamp       : {} ({})",
             block_timestamp,
-            block_time.format("%Y-%m-%d %H:%M:%S%.3f")
+            block_time.format("%Y-%m-%d %H:%M:%S%.3f UTC")
+        )?;
+
+        writeln!(
+            blocks_out,
+            "  timestamp_ms    : {}",
+            block_timestamp_ms
         )?;
         writeln!(blocks_out, "  round        : {}", certificate.round())?;
         writeln!(blocks_out, "  gasUsed      : {}", block_gas_used)?;
